@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Full-Screen ATM Prototype</title>
+  <style>
+    * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #e0e0e0; }
+    #atm { display: flex; flex-direction: column; width: 100%; height: 100%; background: #bbb; }
+    #screen-bezel { flex: 1; position: relative; background: #444; margin: 16px; border: 4px solid #222; border-radius: 8px; overflow: hidden; }
+    #screen { width: 100%; height: 100%; background: #000; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 16px; }
+    #figure { width: 80px; height: 80px; background: #666; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px; margin-bottom: 12px; }
+    #message { font-size: 1.5rem; text-align: center; margin: 8px 0; }
+    #subtitles { position: absolute; bottom: 16px; width: 90%; font-size: 1rem; text-align: center; color: #0f0; }
+    #controls { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-top: 16px; }
+    .screen-btn {
+      background: #555;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 12px 16px;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: background 0.3s, color 0.3s;
+    }
+    .screen-btn:hover {
+      background: #00FF00;
+      color: #000;
+    }
+    #pin-entry, #prompt-box { display: none; flex-direction: column; align-items: center; margin-top: 16px; }
+    #pin, #prompt-input { width: 200px; font-size: 2rem; text-align: center; letter-spacing: 0.4rem; padding: 8px; margin-bottom: 16px; background: #333; color: #0f0; border: 2px inset #111; }
+    #keypad { display: grid; grid-template-columns: repeat(3, 80px); gap: 12px; }
+    .key {
+      width: 80px;
+      height: 80px;
+      font-size: 1.5rem;
+      background: #ccc;
+      border: 2px solid #888;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.3s, color 0.3s;
+    }
+    .key:hover, .key:active {
+      background: #00FF00;
+      color: #000;
+    }
+    .highlight { outline: 4px solid #0f0; }
+    #slot-area { display: flex; justify-content: space-around; padding: 0 16px 16px; }
+    .slot { flex: 1; margin: 0 8px; background: #222; color: #fff; text-align: center; border: 2px inset #111; border-radius: 4px; }
+    #card-slot { height: 60px; line-height: 60px; }
+    #cash-slot { height: 80px; position: relative; }
+    .cash { width: 120px; height: 50px; background: #0a0; position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: none; }
+    #receipt-slot { height: 50px; line-height: 50px; }
+    #screen.dimmed > *:not(#prompt-box):not(#keypad):not(#prompt-input) { filter: blur(3px) brightness(0.5); pointer-events: none; }
+    @keyframes rise { from { bottom: 16px; opacity: 0; } to { bottom: 100px; opacity: 1; } }
+  </style>
+</head>
+<body>
+  <div id="atm">
+    <div id="screen-bezel">
+      <div id="screen">
+        <div id="figure">🤖</div>
+        <div id="message">Select Mode</div>
+        <div id="controls">
+          <button class="screen-btn" id="elderlyMode">Elderly</button>
+          <button class="screen-btn" id="visuallyMode">Visually Impaired</button>
+        </div>
+        <div id="subtitles"></div>
+        <div id="pin-entry">
+          <input type="password" id="pin" maxlength="4" readonly />
+        </div>
+        <div id="prompt-box">
+          <label id="prompt-label"></label>
+          <input type="text" id="prompt-input" readonly />
+        </div>
+        <div id="keypad"></div>
+      </div>
+    </div>
+    <div id="slot-area">
+      <div class="slot" id="card-slot">Insert Card →</div>
+      <div class="slot" id="cash-slot"><div class="cash"></div></div>
+      <div class="slot" id="receipt-slot">Receipt</div>
+    </div>
+  </div>
+  <script>
+    const $ = id => document.getElementById(id);
+    const message = $('message');
+    const subtitles = $('subtitles');
+    const controls = $('controls');
+    const pinEntry = $('pin-entry');
+    const pinInput = $('pin');
+    const keypad = $('keypad');
+    const cardSlot = $('card-slot');
+    const cashSlot = document.querySelector('#cash-slot .cash');
+    const screen = $('screen');
+    const promptBox = $('prompt-box');
+    const promptInput = $('prompt-input');
+    const promptLabel = $('prompt-label');
+
+    let pinValue = '', balance = 1000, currentPromptCallback = null, isPromptMode = false;
+
+    const buildKeypad = () => {
+      keypad.innerHTML = '';
+      [...Array(9).keys()].forEach(i => createKey(i + 1));
+      ['←', 0, '✔'].forEach(createKey);
+    };
+
+    const createKey = label => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.className = 'key';
+      btn.onclick = () => handleKey(label);
+      keypad.appendChild(btn);
+    };
+
+    const speak = text => speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+
+    const startElderly = () => {
+      controls.style.display = 'none';
+      message.textContent = 'Machine sensing presence...';
+      setTimeout(() => {
+        message.textContent = 'Hello Edna, please insert your card';
+        subtitles.textContent = 'Please insert your card';
+        cardSlot.classList.add('highlight');
+        cardSlot.onclick = () => {
+          cardSlot.classList.remove('highlight');
+          message.textContent = 'Card received. Please enter your PIN';
+          subtitles.textContent = 'Card received. Please enter your PIN';
+          requestPin();
+        };
+      }, 2000);
+    };
+
+    const startVisually = () => {
+      controls.style.display = 'none';
+      message.textContent = 'Touch screen to start';
+      subtitles.textContent = '';
+      screen.addEventListener('click', () => {
+        speak('Please insert your debit card');
+        subtitles.textContent = 'Insert debit card';
+        cardSlot.classList.add('highlight');
+        cardSlot.onclick = () => {
+          cardSlot.classList.remove('highlight');
+          speak('Card received. Enter PIN');
+          subtitles.textContent = 'Card received. Enter PIN';
+          requestPin();
+        };
+      }, { once: true });
+    };
+
+    const requestPin = () => {
+      isPromptMode = false;
+      controls.style.display = 'none';
+      message.textContent = 'Enter PIN';
+      subtitles.textContent = '';
+      pinEntry.style.display = 'flex';
+    };
+
+    const confirmPin = () => {
+      message.textContent = 'PIN accepted';
+      subtitles.textContent = 'Please wait...';
+      setTimeout(showMainMenu, 1000);
+    };
+
+    const handleKey = label => {
+      if (isPromptMode) {
+        if (label === '←') promptInput.value = promptInput.value.slice(0, -1);
+        else if (label === '✔') submitPrompt(true);
+        else promptInput.value += label;
+      } else {
+        if (label === '←') pinValue = pinValue.slice(0, -1);
+        else if (label === '✔') { if (pinValue.length === 4) confirmPin(); return; }
+        else if (pinValue.length < 4) pinValue += label;
+        pinInput.value = '*'.repeat(pinValue.length);
+      }
+    };
+
+    const showMainMenu = () => {
+      pinEntry.style.display = 'none';
+      subtitles.textContent = '';
+      message.textContent = 'Select Transaction';
+      controls.innerHTML = `
+        <button class="screen-btn" onclick="handleWithdraw()">Withdraw</button>
+        <button class="screen-btn" onclick="handleDeposit()">Deposit</button>
+        <button class="screen-btn" onclick="handleBalance()">Balance Inquiry</button>`;
+      controls.style.display = 'flex';
+    };
+
+    const showPrompt = (text, callback) => {
+      isPromptMode = true;
+      screen.classList.add('dimmed');
+      promptLabel.textContent = text;
+      promptInput.value = '';
+      currentPromptCallback = callback;
+      promptBox.style.display = 'flex';
+      pinEntry.style.display = 'flex';
+    };
+
+    const submitPrompt = accepted => {
+      isPromptMode = false;
+      screen.classList.remove('dimmed');
+      promptBox.style.display = 'none';
+      pinEntry.style.display = 'none';
+      if (accepted && currentPromptCallback) {
+        const val = parseFloat(promptInput.value);
+        currentPromptCallback(val);
+      } else showMainMenu();
+    };
+
+    const handleWithdraw = () => {
+      showPrompt('Enter amount to withdraw (multiples of 20):', amt => {
+        if (isNaN(amt) || amt <= 0 || amt % 20 !== 0) return alert('Invalid amount.') || showMainMenu();
+        if (amt > balance) return alert('Insufficient funds.') || showMainMenu();
+        balance -= amt;
+        message.textContent = `Please take your $${amt}`;
+        controls.style.display = 'none';
+        cashSlot.style.display = 'block';
+        cashSlot.style.animation = 'rise 1.5s ease-out forwards';
+        setTimeout(showMainMenu, 3000);
+      });
+    };
+
+    const handleDeposit = () => {
+      showPrompt('Enter amount to deposit:', amt => {
+        if (isNaN(amt) || amt <= 0) return alert('Invalid amount.') || showMainMenu();
+        balance += amt;
+        message.textContent = `Depositing $${amt}...`;
+        controls.style.display = 'none';
+        setTimeout(() => {
+          message.textContent = `Deposited $${amt}`;
+          setTimeout(showMainMenu, 2000);
+        }, 1000);
+      });
+    };
+
+    const handleBalance = () => {
+      message.textContent = `Your balance is $${balance.toFixed(2)}`;
+      controls.style.display = 'none';
+      setTimeout(showMainMenu, 3000);
+    };
+
+    $('elderlyMode').onclick = startElderly;
+    $('visuallyMode').onclick = startVisually;
+    buildKeypad();
+  </script>
+</body>
+</html>
