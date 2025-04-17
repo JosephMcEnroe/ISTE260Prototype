@@ -235,10 +235,12 @@
     };
 
     const handleBalance = () => {
-      message.textContent = `Your balance is $${balance.toFixed(2)}`;
-      controls.style.display = 'none';
-      setTimeout(showMainMenu, 3000);
-    };
+  message.textContent = `Your balance is $${balance.toFixed(2)}`;
+  controls.innerHTML = `
+    <button class="screen-btn" onclick="showMainMenu()"> Back</button>
+  `;
+  controls.style.display = 'flex';
+};
     function setupMic() {
   window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (window.SpeechRecognition) {
