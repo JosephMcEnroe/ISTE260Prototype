@@ -19,8 +19,8 @@
       color: #fff;
       border: none;
       border-radius: 4px;
-      padding: 12px 16px;
-      font-size: 1.1rem;
+      padding: 30px 34px;
+      font-size: 1.3rem;
       cursor: pointer;
       transition: background 0.3s, color 0.3s;
     }
@@ -78,7 +78,7 @@
       </div>
     </div>
     <div id="slot-area">
-      <div class="slot" id="card-slot">Insert Card →</div>
+      <div class="slot" id="card-slot">Insert Card Here</div>
       <div class="slot" id="cash-slot"><div class="cash"></div></div>
       <div class="slot" id="receipt-slot">Receipt</div>
     </div>
@@ -239,10 +239,62 @@
       controls.style.display = 'none';
       setTimeout(showMainMenu, 3000);
     };
+    function setupMic() {
+  window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (window.SpeechRecognition) {
+    const recognition = new SpeechRecognition();
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    const micBtn = document.getElementById('mic-btn');
+    if (!micBtn) return;
+    micBtn.addEventListener('click', () => {
+  try {
+    recognition.start();
+    message.textContent = "🎤 Listening for command...";
+  } catch (e) {
+    console.error("Recognition start failed:", e);
+    message.textContent = "Microphone error. Try again.";
+  }
+});
+    micBtn.addEventListener('click', () => {
+      try {
+        recognition.start();
+        message.textContent = "🎤 Listening for command...";
+      } catch (e) {
+        console.error("Recognition start failed:", e);
+        message.textContent = "Microphone error. Try again.";
+      }
+    });
+
+    recognition.onresult = e => {
+      const transcript = e.results[0][0].transcript.toLowerCase().trim();
+      message.textContent = `You said: "${transcript}"`;
+
+      if (transcript.includes("withdraw")) handleWithdraw();
+      else if (transcript.includes("deposit")) handleDeposit();
+      else if (transcript.includes("balance")) handleBalance();
+      else if (transcript.includes("elderly")) startElderly();
+      else if (transcript.includes("pin")) requestPin();
+      else if (transcript.includes("visually")) startVisually();
+      else message.textContent = "Command not recognized.";
+    };
+
+    recognition.onerror = e => {
+      console.error("Speech Recognition Error:", e);
+      message.textContent = "Mic error: " + e.error;
+    };
+  } else {
+    const micBtn = document.getElementById('mic-btn');
+    if (micBtn) micBtn.style.display = 'none';
+    console.warn("Speech Recognition not supported in this browser.");
+  }
+}
 
     $('elderlyMode').onclick = startElderly;
     $('visuallyMode').onclick = startVisually;
     buildKeypad();
+    setupMic();
   </script>
 </body>
 </html>
