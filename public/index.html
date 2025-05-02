@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Voice AI ATM</title>
+  <style>
+    * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; }
+    html, body { margin: 0; padding: 0; height: 100%; background: #000; color: #fff; }
+    #atm { display: flex; flex-direction: column; height: 100%; }
+    #screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+    #figure { font-size: 4rem; margin-bottom: 10px; }
+    #message { font-size: 1.5rem; margin-bottom: 20px; text-align: center; }
+    #controls { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 20px; }
+    .screen-btn {
+      padding: 20px 30px;
+      font-size: 1.2rem;
+      background: #444;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: background 0.3s, color 0.3s;
+    }
+    .screen-btn:hover {
+      background: #00FF00;
+      color: #000;
+    }
+    #keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 80px);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .key {
+      background: #ccc;
+      color: #003;
+      font-size: 1.5rem;
+      padding: 20px;
+      border: 2px solid #888;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .key:hover {
+      background: #00FF00;
+      color: #000;
+    }
+    #input-area {
+      margin-bottom: 20px;
+    }
+    #amountInput {
+      font-size: 2rem;
+      padding: 10px;
+      text-align: center;
+      width: 200px;
+    }
+  </style>
+</head>
+<body>
+  <div id="atm">
+    <div id="screen">
+      <div id="figure">🤖</div>
+      <div id="message">Welcome! Press speak or use buttons below.</div>
+      <div id="controls">
+        <button class="screen-btn" id="withdrawBtn">Withdraw</button>
+        <button class="screen-btn" id="depositBtn">Deposit</button>
+        <button class="screen-btn" id="balanceBtn">Balance Inquiry</button>
+        <button class="screen-btn" id="micBtn">🎤 Speak</button>
+      </div>
+      <div id="input-area" style="display:none;">
+        <input type="text" id="amountInput" readonly />
+      </div>
+      <div id="keypad"></div>
+    </div>
+  </div>
+
+  <script>
+    let balance = 1000;
+    let inputBuffer = "";
+    let mode = null; // "withdraw" or "deposit"
+
+    const message = document.getElementById("message");
+    const keypad = document.getElementById("keypad");
+    const amountInput = document.getElementById("amountInput");
+    const inputArea = document.getElementById("input-area");
+
+    function speak(text) {
+      const utter = new SpeechSynthesisUtterance(text);
+      speechSynthesis.speak(utter);
+    }
+
+    function buildKeypad() {
+      keypad.innerHTML = '';
+      [...Array(9).keys()].forEach(i => createKey(i + 1));
+      createKey("←"); createKey(0); createKey("✔");
+    }
+
+    function createKey(label) {
+      const btn = document.createElement("button");
+      btn.textContent = label;
+      btn.className = "key";
+      btn.onclick = () => handleKey(label);
+      keypad.appendChild(btn);
+    }
+
+    function handleKey(label) {
+      if (label === "←") {
+        inputBuffer = inputBuffer.slice(0, -1);
+      } else if (label === "✔") {
+        if (mode === "withdraw") processWithdraw();
+        else if (mode === "deposit") processDeposit();
+        return;
+      } else {
+        inputBuffer += label;
+      }
+      amountInput.value = inputBuffer;
+    }
+
+    function handleWithdraw() {
+      mode = "withdraw";
+      inputBuffer = "";
+      inputArea.style.display = "block";
+      amountInput.value = "";
+      message.textContent = "Enter amount to withdraw:";
+      speak("How much would you like to withdraw?");
+    }
+
+    function handleDeposit() {
+      mode = "deposit";
+      inputBuffer = "";
+      inputArea.style.display = "block";
+      amountInput.value = "";
+      message.textContent = "Enter amount to deposit:";
+      speak("How much would you like to deposit?");
+    }
+
+    function handleBalance() {
+      message.textContent = `Your current balance is $${balance.toFixed(2)}`;
+      speak(`Your balance is ${balance.toFixed(2)} dollars.`);
+    }
+
+    function processWithdraw() {
+      const amt = parseFloat(inputBuffer);
+      if (isNaN(amt) || amt <= 0 || amt % 20 !== 0) {
+        message.textContent = "Invalid amount. Must be multiple of 20.";
+        speak("Invalid amount. Please enter a multiple of 20.");
+        return;
+      }
+      if (amt > balance) {
+        message.textContent = "Insufficient funds.";
+        speak("You don't have enough funds.");
+        return;
+      }
+      balance -= amt;
+      message.textContent = `Please take your $${amt}`;
+      speak(`Withdrawing ${amt} dollars.`);
+      resetInput();
+    }
+
+    function processDeposit() {
+      const amt = parseFloat(inputBuffer);
+      if (isNaN(amt) || amt <= 0) {
+        message.textContent = "Invalid deposit amount.";
+        speak("Invalid deposit amount.");
+        return;
+      }
+      balance += amt;
+      message.textContent = `Deposited $${amt} successfully.`;
+      speak(`Deposited ${amt} dollars.`);
+      resetInput();
+    }
+
+    function resetInput() {
+      inputBuffer = "";
+      inputArea.style.display = "none";
+      mode = null;
+    }
+
+    async function sendToChatGPT(userInput) {
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ message: userInput })
+    });
+
+    const data = await response.json();
+    const reply = data.reply?.toLowerCase() || "";
+    return reply;
+  } catch (error) {
+    console.error('Error communicating with the server:', error);
+    message.textContent = "Error communicating with the server.";
+    speak("There was an error communicating with the server.");
+    return "";
+  }
+}
+
+
+    function parseAndExecute(reply) {
+      if (reply.includes("withdraw")) {
+        const amt = parseFloat(reply.match(/\d+/));
+        if (!isNaN(amt)) {
+          inputBuffer = amt.toString();
+          processWithdraw();
+        } else handleWithdraw();
+      } else if (reply.includes("deposit")) {
+        const amt = parseFloat(reply.match(/\d+/));
+        if (!isNaN(amt)) {
+          inputBuffer = amt.toString();
+          processDeposit();
+        } else handleDeposit();
+      } else if (reply.includes("balance")) {
+        handleBalance();
+      } else {
+        message.textContent = "Command not recognized.";
+        speak("Sorry, I didn’t understand that.");
+      }
+    }
+
+    function setupMic() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Speech recognition not supported.");
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = "en-US";
+
+      document.getElementById("micBtn").onclick = () => {
+        recognition.start();
+        message.textContent = "🎤 Listening...";
+      };
+
+      recognition.onresult = async (event) => {
+        const transcript = event.results[0][0].transcript;
+        message.textContent = `You said: "${transcript}"`;
+        speak(`You said: ${transcript}`);
+        const reply = await sendToChatGPT(transcript);
+        parseAndExecute(reply);
+      };
+
+      recognition.onerror = (event) => {
+        message.textContent = "Mic error: " + event.error;
+        speak("There was an error using the microphone.");
+      };
+    }
+
+    function enableHoverSpeak() {
+      document.querySelectorAll('.screen-btn').forEach(btn => {
+        btn.addEventListener('mouseenter', () => {
+          const label = btn.textContent.replace(/🎤/, '').trim();
+          speak(label);
+        });
+      });
+    }
+
+    document.getElementById("withdrawBtn").addEventListener("click", handleWithdraw);
+    document.getElementById("depositBtn").addEventListener("click", handleDeposit);
+    document.getElementById("balanceBtn").addEventListener("click", handleBalance);
+
+    buildKeypad();
+    setupMic();
+    enableHoverSpeak();
+  </script>
+</body>
+</html>
